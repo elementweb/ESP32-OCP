@@ -2,8 +2,8 @@ using namespace std;
 
 #pragma once
 
-#include "definitions.h"
 #include <driver/uart.h>
+#include "definitions.h"
 #include "dataManager.class.h"
 
 #define UART_BUFFER_DEPTH     (_1KB * 4)
@@ -13,6 +13,7 @@ using namespace std;
 class uartInterface {
   private: uart_t* interface;
   private: bool command_flag = false;
+  private: bool new_data = false;
 
   public: void initialize() {
     this->interface = uartBegin(2, UART_PORT_BAUD, SERIAL_8N1, GPIO_NUM_16, GPIO_NUM_17, 10, false);
@@ -25,7 +26,7 @@ class uartInterface {
   }
 
   public: void processData(dataManager &dataManager) {
-    int i;
+    unsigned int i;
     char t;
     size_t available = uartAvailable(this->interface);
 
@@ -43,53 +44,103 @@ class uartInterface {
         dataManager.bufferPush(t);
       }
 
-      dataManager.newDataAvailable(true);
+      this->newDataAvailable(true);
     }
   }
 
+  public: void newDataAvailable(bool condition) {
+    this->new_data = condition;
+  }
+
+  public: bool isNewDataAvailable() {
+    return this->new_data;
+  }
+
   public: void processCommands(dataManager &dataManager) {
-    if(dataManager.isNewDataAvailable()) {
+    char conversion_buffer[16];
+
+    if(this->isNewDataAvailable()) {
+      /** 
+       * Return buffer
+       */
+      char buffer_return_command[] = "ATOP+COM=BUFFER.RETURN();";
+      if(char *loc = strstr(dataManager.buffer(), buffer_return_command)) {
+        dataManager.removeFromBuffer(loc, strlen(buffer_return_command));
+
+        this->sendData(dataManager.buffer());
+        this->sendData("\n");
+
+        Serial.println(buffer_return_command);
+      }
+
       /**
        * Return buffer length
        */
       char buffer_length_command[] = "ATOP+COM=BUFFER.LENGTH;";
-      if(strstr(dataManager.buffer(), "ATOP+COM=BUFFER.LENGTH;")) {
-        dataManager.removeFromBuffer((char *)"ATOP+COM=BUFFER.LENGTH;");
-        
-        this->sendData((char *)dataManager.bufferLength());
+      if(char *loc = strstr(dataManager.buffer(), buffer_length_command)) {
+        dataManager.removeFromBuffer(loc, strlen(buffer_length_command));
 
-        
+        char * buffer_length = itoa(dataManager.bufferLength(), conversion_buffer, 10);
+        this->sendData(buffer_length);
+        this->sendData("\n");
+
+        Serial.println(buffer_length_command);
       }
 
       /** 
        * Return remaining available buffer bytes
        */
-      if(strstr(dataManager.buffer(), (char*)"ATOP+COM=BUFFER.REMAINING;")) {
-        Serial.println("contains a command");
+      char buffer_available_command[] = "ATOP+COM=BUFFER.REMAINING;";
+      if(char *loc = strstr(dataManager.buffer(), buffer_available_command)) {
+        dataManager.removeFromBuffer(loc, strlen(buffer_available_command));
+
+        char * buffer_remaining = itoa(dataManager.bufferRemaining(), conversion_buffer, 10);
+        this->sendData(buffer_remaining);
+        this->sendData("\n");
+
+        Serial.println(buffer_available_command);
       }
 
       /**
        * Return total buffer size
        */
-      if(strstr(dataManager.buffer(), (char*)"ATOP+COM=BUFFER.SIZE;")) {
-        Serial.println("contains a command");
+      char buffer_size_command[] = "ATOP+COM=BUFFER.SIZE;";
+      if(char *loc = strstr(dataManager.buffer(), buffer_size_command)) {
+        dataManager.removeFromBuffer(loc, strlen(buffer_size_command));
+
+        char * buffer_size = itoa(dataManager.bufferSizeLimit(), conversion_buffer, 10);
+        this->sendData(buffer_size);
+        this->sendData("\n");
+
+        Serial.println(buffer_size_command);
       }
 
       /**
        * Clear buffer
        */
-      if(strstr(dataManager.buffer(), (char*)"ATOP+COM=BUFFER.CLEAR();")) {
-        Serial.println("contains a command");
+      char buffer_flush_command[] = "ATOP+COM=BUFFER.CLEAR();";
+      if(strstr(dataManager.buffer(), buffer_flush_command)) {
+        dataManager.bufferFlush();
+
+        Serial.println(buffer_flush_command);
       }
 
       /** 
        * Transmit data
        */
-      if(strstr(dataManager.buffer(), (char*)"ATOP+COM=BUFFER.TRANSMIT();")) {
-        Serial.println("contains a command");
+      char buffer_transmit_command[] = "ATOP+COM=BUFFER.TRANSMIT();";
+      if(char *loc = strstr(dataManager.buffer(), buffer_transmit_command)) {
+        dataManager.removeFromBuffer(loc, strlen(buffer_transmit_command));
+
+        // not implemented yet
+
+        Serial.println(buffer_transmit_command);
       }
 
-      dataManager.newDataAvailable(false);
+      /**
+       * Set flag to false
+       */
+      this->newDataAvailable(false);
     }
   }
 };

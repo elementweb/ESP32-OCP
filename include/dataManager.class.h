@@ -10,30 +10,30 @@ using namespace std;
 
 class dataManager {
   private: char _buffer[BUFFER_SIZE];
-  private: bool new_data = false;
 
-  public: size_t bufferLength() {
+  public: unsigned int bufferLength() {
     return strlen(this->_buffer);
   }
 
-  public: size_t bufferSize() {
+  public: unsigned int bufferSize() {
     return BUFFER_SIZE;
   }
 
-  public: size_t bufferSizeLimit() {
+  public: unsigned int bufferSizeLimit() {
     return BUFFER_SIZE_LIMIT;
   }
 
-  public: size_t bufferRemaining() {
+  public: unsigned int bufferRemaining() {
     return BUFFER_SIZE_LIMIT - this->bufferLength();
   }
 
-  public: size_t bufferRemainingReal() {
+  public: unsigned int bufferRemainingReal() {
     return BUFFER_SIZE - this->bufferLength();
   }
 
   public: void bufferFlush() {
-    int i;
+    unsigned int i;
+
     for(i=0; i<BUFFER_SIZE; i++) {
       this->_buffer[i] = 0x00;
     }
@@ -47,33 +47,18 @@ class dataManager {
     this->_buffer[strlen(this->_buffer)] = data;
   }
 
-  public: void newDataAvailable(bool condition) {
-    this->new_data = condition;
-  }
-
-  public: bool isNewDataAvailable() {
-    return this->new_data;
-  }
-
-  public: void removeFromBuffer(char * data) {
-    char command[] = "asd";
-
-    int pos = (int) strpbrk(this->_buffer, command);
-    int len = strlen(command);
+  public: void removeFromBuffer(char * com_pointer, int com_len) {
+    uint16_t buf_len = strlen(this->_buffer),
+             com_pos = com_pointer - this->_buffer,
+             placements = buf_len - com_pos - com_len,
+             i;
     
-    if(pos == NULL) {
-      return;
+    for(i=0; i<placements; i++) {
+      this->_buffer[com_pos + i] = this->_buffer[com_pos + com_len + i];
     }
 
-    int i;
-    for(i=0; i<len; i++) {
-      this->_buffer[i + pos] = this->buffer[i + pos + (int)len];
+    for(i=1; i<=com_len; i++) {
+      this->_buffer[buf_len - i] = 0x00;
     }
-
-    // char *pos = strchr(this->_buffer, (char)'dfsdf');
-
-    // Serial.print('[');
-    // Serial.print(pos);
-    // Serial.println(']');
   }
 };
