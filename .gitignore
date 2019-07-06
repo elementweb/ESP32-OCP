@@ -1,5 +1,5 @@
 .pio
 .pioenvs
 .piolibdeps
-.vscode
-.platformio
+.vscode/
+platformio.ini
