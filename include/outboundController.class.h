@@ -2,9 +2,10 @@ using namespace std;
 
 #include "uartInterface.class.h"
 #include "dataManager.class.h"
+#include "opticalInterface.class.h"
 
 class outboundController {
-  public: void loop(uartInterface &portUart, dataManager &dataManager) {
+  public: void run(uartInterface &portUart, dataManager &dataManager, opticalInterface &opticalInterface) {
     /**
      * Process incoming UART data
      */
@@ -13,12 +14,12 @@ class outboundController {
     /**
      * Check for incomming commands
      */
-    portUart.processCommands(dataManager);
+    portUart.processCommands(dataManager, opticalInterface);
 
     /**
      * Packetize data and module over optical beam
      */
-    // optical_transmit();
+    opticalInterface.packetizeAndTransmit(dataManager);
 
   }
 };

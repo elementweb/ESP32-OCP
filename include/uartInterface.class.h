@@ -5,6 +5,7 @@ using namespace std;
 #include <driver/uart.h>
 #include "definitions.h"
 #include "dataManager.class.h"
+#include "opticalInterface.class.h"
 
 #define UART_BUFFER_DEPTH     (_1KB * 4)
 #define UART_PORT_NUM         (2)
@@ -14,6 +15,14 @@ class uartInterface {
   private: uart_t* interface;
   private: bool command_flag = false;
   private: bool new_data = false;
+
+  private: char buffer_return_command[26] PROGMEM =         "ATOP+COM=BUFFER.RETURN();";
+  private: char buffer_length_command[24] PROGMEM =         "ATOP+COM=BUFFER.LENGTH;";
+  private: char buffer_available_command[27] PROGMEM =      "ATOP+COM=BUFFER.REMAINING;";
+  private: char buffer_size_command[22] PROGMEM =           "ATOP+COM=BUFFER.SIZE;";
+  private: char buffer_flush_command[25] PROGMEM =          "ATOP+COM=BUFFER.CLEAR();";
+  private: char buffer_transmit_command[28] PROGMEM =       "ATOP+COM=BUFFER.TRANSMIT();";
+  private: char buffer_stop_command[24] PROGMEM =           "ATOP+COM=BUFFER.STOP();";
 
   public: void initialize() {
     this->interface = uartBegin(2, UART_PORT_BAUD, SERIAL_8N1, GPIO_NUM_16, GPIO_NUM_17, 10, false);
@@ -28,11 +37,13 @@ class uartInterface {
   public: void processData(dataManager &dataManager) {
     unsigned int i;
     char t;
+
     size_t available = uartAvailable(this->interface);
 
     if(available) {      
       if(available > dataManager.bufferRemainingReal()) {
-        Serial.print("buffer overflow");
+        Serial.print(PROGMEM "buffer overflow");
+        
         uartFlush(this->interface);
 
         return;
@@ -56,86 +67,103 @@ class uartInterface {
     return this->new_data;
   }
 
-  public: void processCommands(dataManager &dataManager) {
+  public: void processCommands(dataManager &dataManager, opticalInterface &opticalInterface) {
     char conversion_buffer[16];
 
     if(this->isNewDataAvailable()) {
       /** 
        * Return buffer
        */
-      char buffer_return_command[] = "ATOP+COM=BUFFER.RETURN();";
-      if(char *loc = strstr(dataManager.buffer(), buffer_return_command)) {
-        dataManager.removeFromBuffer(loc, strlen(buffer_return_command));
+      if(char *loc = strstr(dataManager.buffer(), this->buffer_return_command)) {
+        dataManager.removeFromBuffer(loc, strlen(this->buffer_return_command));
 
         this->sendData(dataManager.buffer());
         this->sendData("\n");
 
-        Serial.println(buffer_return_command);
+        Serial.println(this->buffer_return_command);
       }
 
       /**
        * Return buffer length
        */
-      char buffer_length_command[] = "ATOP+COM=BUFFER.LENGTH;";
-      if(char *loc = strstr(dataManager.buffer(), buffer_length_command)) {
-        dataManager.removeFromBuffer(loc, strlen(buffer_length_command));
+      if(char *loc = strstr(dataManager.buffer(), this->buffer_length_command)) {
+        dataManager.removeFromBuffer(loc, strlen(this->buffer_length_command));
 
         char * buffer_length = itoa(dataManager.bufferLength(), conversion_buffer, 10);
+
         this->sendData(buffer_length);
         this->sendData("\n");
 
-        Serial.println(buffer_length_command);
+        // debug; TODO: remove
+        Serial.println(opticalInterface.packetCount(dataManager));
+
+        Serial.println(this->buffer_length_command);
       }
 
       /** 
        * Return remaining available buffer bytes
        */
-      char buffer_available_command[] = "ATOP+COM=BUFFER.REMAINING;";
-      if(char *loc = strstr(dataManager.buffer(), buffer_available_command)) {
-        dataManager.removeFromBuffer(loc, strlen(buffer_available_command));
+      if(char *loc = strstr(dataManager.buffer(), this->buffer_available_command)) {
+        dataManager.removeFromBuffer(loc, strlen(this->buffer_available_command));
 
         char * buffer_remaining = itoa(dataManager.bufferRemaining(), conversion_buffer, 10);
+
         this->sendData(buffer_remaining);
         this->sendData("\n");
 
-        Serial.println(buffer_available_command);
+        Serial.println(this->buffer_available_command);
       }
 
       /**
        * Return total buffer size
        */
-      char buffer_size_command[] = "ATOP+COM=BUFFER.SIZE;";
-      if(char *loc = strstr(dataManager.buffer(), buffer_size_command)) {
-        dataManager.removeFromBuffer(loc, strlen(buffer_size_command));
+      if(char *loc = strstr(dataManager.buffer(), this->buffer_size_command)) {
+        dataManager.removeFromBuffer(loc, strlen(this->buffer_size_command));
 
         char * buffer_size = itoa(dataManager.bufferSizeLimit(), conversion_buffer, 10);
+
         this->sendData(buffer_size);
         this->sendData("\n");
 
-        Serial.println(buffer_size_command);
+        Serial.println(this->buffer_size_command);
       }
 
       /**
        * Clear buffer
        */
-      char buffer_flush_command[] = "ATOP+COM=BUFFER.CLEAR();";
-      if(strstr(dataManager.buffer(), buffer_flush_command)) {
+      if(strstr(dataManager.buffer(), this->buffer_flush_command)) {
         dataManager.bufferFlush();
 
-        Serial.println(buffer_flush_command);
+        Serial.println(this->buffer_flush_command);
       }
 
       /** 
        * Transmit data
        */
-      char buffer_transmit_command[] = "ATOP+COM=BUFFER.TRANSMIT();";
-      if(char *loc = strstr(dataManager.buffer(), buffer_transmit_command)) {
-        dataManager.removeFromBuffer(loc, strlen(buffer_transmit_command));
+      if(char *loc = strstr(dataManager.buffer(), this->buffer_transmit_command)) {
+        dataManager.removeFromBuffer(loc, strlen(this->buffer_transmit_command));
 
-        // not implemented yet
+        opticalInterface.activate();
 
-        Serial.println(buffer_transmit_command);
+        Serial.println(this->buffer_transmit_command);
       }
+
+      /** 
+       * Stop data transmission
+       */
+      if(char *loc = strstr(dataManager.buffer(), this->buffer_stop_command)) {
+        dataManager.removeFromBuffer(loc, strlen(this->buffer_stop_command));
+
+        opticalInterface.deactivate();
+
+        Serial.println(this->buffer_stop_command);
+      }
+      
+      /**
+       * Report free heap space
+       */
+      Serial.print("Heap: ");
+      Serial.println(ESP.getFreeHeap());
 
       /**
        * Set flag to false
