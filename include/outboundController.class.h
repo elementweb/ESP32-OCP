@@ -16,10 +16,5 @@ class outboundController {
      */
     portUart.processCommands(dataManager, opticalInterface);
 
-    /**
-     * Packetize data and module over optical beam
-     */
-    opticalInterface.packetizeAndTransmit(dataManager);
-
   }
 };

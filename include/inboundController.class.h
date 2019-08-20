@@ -1,7 +1,20 @@
 using namespace std;
 
+#include "uartInterface.class.h"
+#include "dataManager.class.h"
+#include "opticalInterface.class.h"
+
 class inboundController {
-  public: void run() {
-    // this will listen for data coming from photodiode
+  public: void run(uartInterface &portUart, dataManager &dataManager, opticalInterface &opticalInterface) {
+    /**
+     * Packetize data and module over optical beam
+     */
+    opticalInterface.processTransmission(dataManager);
+
+    /**
+     * Listen for incoming data
+     */
+    opticalInterface.processReceiving(dataManager);
+
   }
 };

@@ -1,7 +1,11 @@
 #include <Arduino.h>
 #include <esp32-hal-uart.c>
+#include <SdFat.h>
+#include "includes.h"
 #include "definitions.h"
+#include "peripherals.h"
 #include "uartInterface.class.h"
+#include "canInterface.class.h"
 #include "opticalInterface.class.h"
 #include "outboundController.class.h"
 #include "inboundController.class.h"
@@ -14,19 +18,30 @@ outboundController outbound;
 inboundController inbound;
 
 uartInterface portUart;
+canInterface portCan;
 dataManager dataManagerObject;
 opticalInterface opticalInterfaceObject;
 
+SdFat uSD;
+
+typedef uartInterface uartT;
+
+// Software version, title
 #define SOFTWARE_TITLE          PROGMEM "ESP32-OCP"
 #define SOFTWARE_VERSION        PROGMEM "v1.0.1dev"
+
+// Task manager memory allocations
 #define OUTBOUND_STACK_DEPTH    (_1KB * 8)
 #define INBOUND_STACK_DEPTH     (_1KB * 8)
 
 void outboundTask(void * parameter) {
-  while(1) {
-    // Serial.print("outbound core ");
-    // Serial.println(xPortGetCoreID());
+  // Log the core number that task is initialized on
+  Serial.println(PROGMEM "outbound task initialized on core " + (String) xPortGetCoreID());
+  
+  // Signalize beeKit that OCP is ready
+  portUart.sendData((char*)"READY\n");
 
+  while(true) {
     outbound.run(portUart, dataManagerObject, opticalInterfaceObject);
 
     vTaskDelay(10 / portTICK_PERIOD_MS);
@@ -34,29 +49,51 @@ void outboundTask(void * parameter) {
 }
 
 void inboundTask(void * parameter) {
-  while(1) {
-    // Serial.print("inbound core ");
-    // Serial.println(xPortGetCoreID());
+  // Log the core number that task is initialized on
+  Serial.println(PROGMEM "inbound task initialized on core " + (String) xPortGetCoreID());
 
-    inbound.run();
+  while(true) {
+    inbound.run(portUart, dataManagerObject, opticalInterfaceObject);
 
     vTaskDelay(10 / portTICK_PERIOD_MS);
   }
 }
 
 void setup() {
+  // Run CPU at 240Mhz
+  setCpuFrequencyMhz(240);
+
+  // Initialize debug port
   Serial.begin(115200);
 
+  // Initialize UART port to communicate with beeKit
   portUart.initialize();
 
-  xTaskCreatePinnedToCore(outboundTask, "outbound_controller", OUTBOUND_STACK_DEPTH, NULL, configMAX_PRIORITIES - 1, &outboundTaskHandler, CORE0);
-  xTaskCreatePinnedToCore(inboundTask, "inbound_controller", INBOUND_STACK_DEPTH, NULL, configMAX_PRIORITIES - 1, &inboundTaskHandler, CORE1);
-
+  // Software version
   Serial.print(SOFTWARE_TITLE + (String) " ");
   Serial.println(SOFTWARE_VERSION);
-  Serial.println(PROGMEM "Ready.");
+  Serial.println("CPU running at " + (String) getCpuFrequencyMhz() + "MHz");
+
+  // Initialize SPI
+  SPI.begin();
+  SPI.setClockDivider(SPI_CLOCK_DIV2);
+
+  // Initialize peripheral methods
+  initializePeripherals();
+
+  // Initialize uSD card buffer
+  dataManagerObject.initialize(uSD);
+
+  // Initialize optical interface
+  opticalInterfaceObject.initialize();
+
+  // Initialize core tasks
+  xTaskCreatePinnedToCore(outboundTask, "outbound_controller", OUTBOUND_STACK_DEPTH, NULL, configMAX_PRIORITIES - 1, &outboundTaskHandler, CORE0);
+  delay(10);
+  xTaskCreatePinnedToCore(inboundTask, "inbound_controller", INBOUND_STACK_DEPTH, NULL, configMAX_PRIORITIES - 1, &inboundTaskHandler, CORE1);
 }
 
 void loop() {
-  //
+  // Intentionally left empty:
+  // Tasks allocated to separate cores running infinite loops
 }
