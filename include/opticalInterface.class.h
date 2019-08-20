@@ -21,12 +21,17 @@ using namespace std;
 #define UPPER_VALID period/2 + (3*period)/16;
 
 // Operational modes
-#define OP_MODE_IDLE                (0) // Idle
+#define OP_MODE_IDLE                (0) // Idle (default)
 #define OP_MODE_TRANSMITTING        (1) // Tranmission mode
 #define OP_MODE_RECEIVING           (2) // Receiving mode
 
+// Receiver modes
+#define REC_MODE_LISTENING          (0) // Seaching for beacon (default)
+#define REC_MODE_ACKNOWLEDGE        (1) // Acknowledge beacon by streaming beacon back
+#define REC_MODE_RECEIVING          (2) // Beacon detected, ready to receive packets
+
 // Transmission modes/stages (in order)
-#define MODE_IDLE                   (0) // Idle
+#define MODE_IDLE                   (0) // Idle (default)
 #define MODE_BEACON                 (1) // Stream square wave beacon
 #define MODE_ACKNOWLEDGE            (2) // Wait for incoming beacon acknowledgement
 #define MODE_STREAM                 (3) // Stream packet
@@ -45,7 +50,7 @@ class opticalInterface {
 
   private: uint8_t operational_mode = OP_MODE_IDLE;
   private: uint8_t transmission_mode = MODE_IDLE;
-  private: uint8_t receiving_mode = REC_MODE_IDLE;
+  private: uint8_t receiving_mode = REC_MODE_LISTENING;
   private: uint64_t completion = 0;
 
   private: double period = 1000000 / FREQUENCY;
@@ -197,12 +202,22 @@ class opticalInterface {
       return;
     }
 
-    if(this->listen()) {
-      this->operational_mode = OP_MODE_RECEIVING;
+    if(this->receiving_mode == REC_MODE_LISTENING) {
+      if(this->listen()) {
+        this->operational_mode = OP_MODE_RECEIVING;
+        this->receiving_mode = REC_MODE_ACKNOWLEDGE;
+      }
     }
 
     if(this->operational_mode == OP_MODE_RECEIVING) {
-      // need to stream beacon back before listening for packets
+      if(this->receiving_mode == REC_MODE_ACKNOWLEDGE) {
+        this->beacon();
+        this->receiving_mode = REC_MODE_RECEIVING;
+      }
+
+      if(this->receiving_mode == REC_MODE_RECEIVING) {
+        // listen on Serial1 here
+      }
     }
   }
 
@@ -232,7 +247,7 @@ class opticalInterface {
       break;
 
       case MODE_STREAM:
-        //
+        
       break;
 
       case MODE_STREAM_VERIFY:
