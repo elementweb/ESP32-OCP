@@ -37,6 +37,7 @@ typedef uartInterface uartT;
 void outboundTask(void * parameter) {
   // Log the core number that task is initialized on
   Serial.println(PROGMEM "outbound task initialized on core " + (String) xPortGetCoreID());
+  ring(1, 2);
   
   // Signalize beeKit that OCP is ready
   portUart.sendData((char*)"READY\n");
@@ -51,6 +52,7 @@ void outboundTask(void * parameter) {
 void inboundTask(void * parameter) {
   // Log the core number that task is initialized on
   Serial.println(PROGMEM "inbound task initialized on core " + (String) xPortGetCoreID());
+  ring(1, 2);
 
   while(true) {
     inbound.run(portUart, dataManagerObject, opticalInterfaceObject);
@@ -89,7 +91,7 @@ void setup() {
 
   // Initialize core tasks
   xTaskCreatePinnedToCore(outboundTask, "outbound_controller", OUTBOUND_STACK_DEPTH, NULL, configMAX_PRIORITIES - 1, &outboundTaskHandler, CORE0);
-  delay(10);
+  delay(100);
   xTaskCreatePinnedToCore(inboundTask, "inbound_controller", INBOUND_STACK_DEPTH, NULL, configMAX_PRIORITIES - 1, &inboundTaskHandler, CORE1);
 }
 

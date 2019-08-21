@@ -11,7 +11,7 @@ using namespace std;
 
 #define PACKET_DATA_SIZE 6
 
-// Define optical interface clock frequency
+// Define optical interface clock frequency in Hz. Baud rate = frequency*2
 #define FREQUENCY (150000)
 
 // Signal pulse bounds
@@ -39,14 +39,17 @@ using namespace std;
 #define MODE_COMPLETE               (5) // Stream completion message
 #define MODE_COMPLETE_ACKNOWLEDGE   (6) // Wait for completion message acknowledgement
 
+// Packet sizing
+#define BLOCKS_PER_PACKET           (1)                 
+
 long pulse1, pulse2;
 
 class opticalInterface {
   private: unsigned int packet_body_size = PACKET_DATA_SIZE;
 
-  private: char data_packet_header[14] = PROGMEM "[data-header]";
-  private: char checksum_packet_header[18] = PROGMEM "[checksum-header]";
-  private: char packet_footer[9] = PROGMEM "[footer]";
+  private: char data_packet_header[14] PROGMEM      = "[data-header]";
+  private: char checksum_packet_header[18] PROGMEM  = "[checksum-header]";
+  private: char packet_footer[9] PROGMEM            = "[footer]";
 
   private: uint8_t operational_mode = OP_MODE_IDLE;
   private: uint8_t transmission_mode = MODE_IDLE;
@@ -62,6 +65,28 @@ class opticalInterface {
   private: double upper_valid = UPPER_VALID;
 
   private: uint16_t packet_count = 0;
+  private: uint16_t packet_current = 0;
+  private: uint16_t packet_completion = 0;
+
+  private: const size_t packet_size = (size_t) ((BLOCKS_PER_PACKET * 512) + 256);
+  private: uint8_t packet[(size_t) ((BLOCKS_PER_PACKET * 512) + 256)];
+  private: uint8_t packet_data_buffer[(size_t) (BLOCKS_PER_PACKET * 512)];
+  private: uint32_t block_pointer = 0;
+  private: uint byte_pointer = 0;
+
+  private: void buildPacket(dataManager &dataManager, uint16_t packet_number) {
+    // size_t byte = 0;
+    // size_t buffer_len = 512;
+    // uint8_t local[buffer_len];
+
+    // memset(local, 0, buffer_len);
+    // memset(this->packet, 0, this->packet_size);
+
+    // dataManager.copy(dataManager.returnOutgoingBlock(++this->block_pointer), local, 512);
+    // dataManager.copy(local, this->packet + this->byte_pointer, strlen((char *) local));
+
+
+  }
 
   public: void initialize() {
     // Optical interface pins
@@ -221,13 +246,9 @@ class opticalInterface {
     }
   }
 
-  private: void beacon() {
-    for(int n=0; n<7000; n++) {
-      Serial1.write(0x55);
-    }
-  }
-
   public: void processTransmission(dataManager &dataManager) {
+    bool packet_verified;
+
     if(!this->isTransmissionActive()) {
       return;
     }
@@ -247,11 +268,28 @@ class opticalInterface {
       break;
 
       case MODE_STREAM:
-        
+        // build packet if not built yet
+        if(this->packet_current == this->packet_completion) {
+          this->buildPacket(dataManager, ++this->packet_current);
+        }
+
+        Serial1.write((char*) this->packet);
+
+        this->transmission_mode = MODE_STREAM_VERIFY;
       break;
 
       case MODE_STREAM_VERIFY:
-        //
+        packet_verified = false;
+
+        // RECEIVING VERIFICATION CHARACTER PULSE?
+        // ALL LOGIC GOES HERE.
+
+        this->transmission_mode = MODE_STREAM;
+
+        if(packet_verified) {
+          this->packet_completion++;
+          this->transmission_mode = this->packet_completion == this->packet_count ? MODE_COMPLETE : MODE_STREAM;         
+        }
       break;
 
       case MODE_COMPLETE:
@@ -278,23 +316,16 @@ class opticalInterface {
     }
 
     return count;
+
+    // float packets = float(dataManager.bufferLength()) / float(this->packet_body_size);
+    // return ceil(packets);
   }
 
-  // private: char * packet(dataManager &dataManager, unsigned int number) {
-  //   const char *packet;
-
-  //   if(number > this->packetCount(dataManager)) {
-  //     return 0x00;
-  //   }
-
-  //   return (char *)packet;
-  // }
-
-  // public: unsigned int packetCount(dataManager &dataManager) {
-  //   float packets = float(dataManager.bufferLength()) / float(this->packet_body_size);
-
-  //   return ceil(packets);
-  // }
+  private: void beacon() {
+    for(int n=0; n<7000; n++) {
+      Serial1.write(0x55);
+    }
+  }
 
   public: bool isTransmissionActive() {
     return this->operational_mode == OP_MODE_TRANSMITTING;
@@ -302,13 +333,13 @@ class opticalInterface {
 
   public: bool startTransmission(dataManager &dataManager) {
     if(this->isTransmissionActive()) {
-      return;
+      return false;
     }
 
     if(this->operational_mode != OP_MODE_IDLE) {
       Serial.println(PROGMEM "Interface is not idling. Transmission won't start.");
       
-      return;
+      return false;
     }
 
     this->packet_count = this->packetCount(dataManager);
@@ -316,8 +347,11 @@ class opticalInterface {
     if(this->packet_count <= 0) {
       Serial.println(PROGMEM "No data have been loaded into the buffer. Transmission won't start.");
 
-      return;
+      return false;
     }
+
+    this->packet_current = 0;
+    this->packet_completion = 0;
 
     Serial.println(PROGMEM "Packet count: " + (String) this->packet_count);
 
@@ -325,6 +359,18 @@ class opticalInterface {
     this->transmission_mode = MODE_IDLE;
 
     Serial.println(PROGMEM "Data transmission started.");
+
+    ///////////////////////
+    uint16_t outgoingBlockCount = dataManager.outgoingBlockCount();
+    Serial.println("Total no. of blocks: " + (String) outgoingBlockCount);
+    for(uint16_t t=1; t<= outgoingBlockCount; t++) {
+      Serial.print("Block " + (String) t + ": ");
+      Serial.print((char*) dataManager.returnOutgoingBlock(t));
+      Serial.println();
+    }
+    ///////////////////////
+
+    return true;
   }
 
   public: bool stopTransmission() {
@@ -332,5 +378,7 @@ class opticalInterface {
     this->transmission_mode = MODE_IDLE;
 
     Serial.println(PROGMEM "Data transmission aborted.");
+
+    return this->operational_mode == OP_MODE_IDLE;
   }
 };

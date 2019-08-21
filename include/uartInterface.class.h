@@ -17,10 +17,15 @@ class uartInterface {
   private: char buffer_length_command[24] PROGMEM       =   "ATOP+COM=BUFFER.LENGTH;";
   private: char buffer_available_command[27] PROGMEM    =   "ATOP+COM=BUFFER.REMAINING;";
   private: char buffer_size_command[22] PROGMEM         =   "ATOP+COM=BUFFER.SIZE;";
-  private: char buffer_flush_command[25] PROGMEM        =   "ATOP+COM=BUFFER.CLEAR();";
-  private: char buffer_transmit_command[28] PROGMEM     =   "ATOP+COM=BUFFER.TRANSMIT();";
-  private: char buffer_stop_command[24] PROGMEM         =   "ATOP+COM=BUFFER.STOP();";
-  private: char system_reboot_command[29] PROGMEM       =   "ATOP+COM=REBOOT();";
+  private: char buffer_flush_command[23] PROGMEM        =   "ATOP+COM=BUFFER.CLEAR;";
+  private: char buffer_transmit_command[26] PROGMEM     =   "ATOP+COM=BUFFER.TRANSMIT;";
+  private: char buffer_stop_command[22] PROGMEM         =   "ATOP+COM=BUFFER.STOP;";
+
+  private: char inc_buffer_pull_command[24] PROGMEM     =   "ATOP+COM=INCOMING.PULL;";
+  private: char inc_buffer_length_command[26] PROGMEM   =   "ATOP+COM=INCOMING.LENGTH;";
+  private: char inc_buffer_flush_command[25] PROGMEM    =   "ATOP+COM=INCOMING.CLEAR;";
+
+  private: char system_reboot_command[27] PROGMEM       =   "ATOP+COM=REBOOT;";
 
   public: void initialize() {
     size_t UART_DEPTH = 4096;
@@ -41,7 +46,7 @@ class uartInterface {
     // int available = Serial2.available();
 
     while(Serial2.available()) {
-      dataManager.bufferPush(Serial2.read());
+      dataManager.outgoingBufferPush(Serial2.read());
       delayMicroseconds(100);
       data_available = true;
       // if(available > dataManager.bufferRemaining()) {
@@ -60,7 +65,7 @@ class uartInterface {
       this->newDataAvailable(true);
       // dataManager.returnBuffer();
 
-      dataManager.reportStats();
+      dataManager.reportOutgoingBufferStats();
 
       // dataManager.updateFrontOutgoingBuffer();
       // Serial.println((char*) dataManager.frontBuffer);
@@ -75,20 +80,14 @@ class uartInterface {
     return this->new_data;
   }
 
-  private: void print_uint64_t(HardwareSerial HS, uint64_t num) {
-    char rev[128]; 
-    char *p = rev+1;
+  private: void returnSuccessOrFailMsg(HardwareSerial HS, bool condition) {
+    if(condition) {
+      HS.println(PROGMEM "OK");
 
-    while (num > 0) {
-      *p++ = '0' + ( num % 10);
-      num/= 10;
+      return;
     }
 
-    p--;
-
-    while (p > rev) {
-      HS.print(*p--);
-    }
+    HS.println(PROGMEM "FAIL");
   }
 
   public: void processCommands(dataManager &dataManager, opticalInterface &opticalInterface) {
@@ -96,61 +95,59 @@ class uartInterface {
       dataManager.updateFrontOutgoingBuffer();
 
       /** 
-       * Return buffer
+       * Return outgoing buffer
        */
       if(char *loc = strstr((char*) dataManager.frontBuffer, this->buffer_return_command)) {
-        dataManager.removeFromBuffer(loc, strlen(this->buffer_return_command));
-        dataManager.returnBuffer();
+        dataManager.removeFromOutgoingBuffer(loc, strlen(this->buffer_return_command));
+
+        dataManager.returnOutgoingBuffer();
         Serial2.println();
 
         Serial.println(this->buffer_return_command);
       }
 
       /**
-       * Return buffer length
+       * Return outgoing buffer length
        */
       if(char *loc = strstr((char*) dataManager.frontBuffer, this->buffer_length_command)) {
-        dataManager.removeFromBuffer(loc, strlen(this->buffer_length_command));
+        dataManager.removeFromOutgoingBuffer(loc, strlen(this->buffer_length_command));
 
-        if(uint64_t buffer_length = dataManager.bufferLength()) {
-          this->print_uint64_t(Serial2, buffer_length);
-        } else {
-          Serial2.print("0");
-        }
-
+        print_uint64_t(Serial2, dataManager.outgoingBufferLength());
         Serial2.println();
 
         Serial.println(this->buffer_length_command);
       }
 
       /** 
-       * Return remaining available buffer bytes
+       * Return remaining available outgoing buffer bytes
        */
       if(char *loc = strstr((char*) dataManager.frontBuffer, this->buffer_available_command)) {
-        dataManager.removeFromBuffer(loc, strlen(this->buffer_available_command));
-        this->print_uint64_t(Serial2, dataManager.bufferRemaining());
+        dataManager.removeFromOutgoingBuffer(loc, strlen(this->buffer_available_command));
+
+        print_uint64_t(Serial2, dataManager.outgoingBufferRemaining());
         Serial2.println();
 
         Serial.println(this->buffer_available_command);
       }
 
       /**
-       * Return total buffer size
+       * Return total buffer size (this applies to both incoming and outgoing buffers as sizes are the same)
        */
       if(char *loc = strstr((char*) dataManager.frontBuffer, this->buffer_size_command)) {
-        dataManager.removeFromBuffer(loc, strlen(this->buffer_size_command));
-        this->print_uint64_t(Serial2, dataManager.bufferSize());
+        dataManager.removeFromOutgoingBuffer(loc, strlen(this->buffer_size_command));
+
+        print_uint64_t(Serial2, dataManager.bufferSize());
         Serial2.println();
 
         Serial.println(this->buffer_size_command);
       }
 
       /**
-       * Clear buffer
+       * Clear outgoing buffer
        */
       if(strstr((char*) dataManager.frontBuffer, this->buffer_flush_command)) {
-        dataManager.bufferFlush();
-        Serial2.println("OK");
+        dataManager.outgoingBufferFlush();
+        this->returnSuccessOrFailMsg(Serial2, true);
 
         Serial.println(this->buffer_flush_command);
       }
@@ -159,13 +156,9 @@ class uartInterface {
        * Transmit data
        */
       if(char *loc = strstr((char*) dataManager.frontBuffer, this->buffer_transmit_command)) {
-        dataManager.removeFromBuffer(loc, strlen(this->buffer_transmit_command));
+        dataManager.removeFromOutgoingBuffer(loc, strlen(this->buffer_transmit_command));
 
-        if(opticalInterface.startTransmission(dataManager)) {
-          Serial2.println("OK");
-        } else {
-          Serial2.println("FAIL");
-        }
+        this->returnSuccessOrFailMsg(Serial2, opticalInterface.startTransmission(dataManager));
 
         Serial.println(this->buffer_transmit_command);
       }
@@ -174,15 +167,47 @@ class uartInterface {
        * Stop data transmission
        */
       if(char *loc = strstr((char*) dataManager.frontBuffer, this->buffer_stop_command)) {
-        dataManager.removeFromBuffer(loc, strlen(this->buffer_stop_command));
+        dataManager.removeFromOutgoingBuffer(loc, strlen(this->buffer_stop_command));
 
-        if(opticalInterface.stopTransmission()) {
-          Serial2.println("OK");
-        } else {
-          Serial2.println("FAIL");
-        }
+        this->returnSuccessOrFailMsg(Serial2, opticalInterface.stopTransmission());
 
         Serial.println(this->buffer_stop_command);
+      }
+
+      /** 
+       * Pull the incoming buffer
+       */
+      if(char *loc = strstr((char*) dataManager.frontBuffer, this->inc_buffer_pull_command)) {
+        dataManager.removeFromOutgoingBuffer(loc, strlen(this->inc_buffer_pull_command));
+
+        dataManager.returnIncomingBuffer();
+        Serial2.println();
+
+        Serial.println(this->inc_buffer_pull_command);
+      }
+
+      /** 
+       * Return incoming buffer length
+       */
+      if(char *loc = strstr((char*) dataManager.frontBuffer, this->inc_buffer_length_command)) {
+        dataManager.removeFromOutgoingBuffer(loc, strlen(this->inc_buffer_length_command));
+
+        print_uint64_t(Serial2, dataManager.incomingBufferLength());
+        Serial2.println();
+
+        Serial.println(this->inc_buffer_length_command);
+      }
+
+      /** 
+       * Clear the incoming buffer
+       */
+      if(char *loc = strstr((char*) dataManager.frontBuffer, this->inc_buffer_flush_command)) {
+        dataManager.removeFromOutgoingBuffer(loc, strlen(this->inc_buffer_flush_command));
+
+        dataManager.incomingBufferFlush();
+        this->returnSuccessOrFailMsg(Serial2, true);
+
+        Serial.println(this->inc_buffer_flush_command);
       }
 
       /** 
@@ -190,6 +215,7 @@ class uartInterface {
        */
       if(strstr((char*) dataManager.frontBuffer, this->system_reboot_command)) {
         Serial.println(PROGMEM "Rebooting...");
+        this->returnSuccessOrFailMsg(Serial2, true);
 
         delay(100);
 
