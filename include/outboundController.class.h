@@ -9,12 +9,7 @@ class outboundController {
     /**
      * Process incoming UART data
      */
-    portUart.processData(dataManager);
-
-    /**
-     * Check for incomming commands
-     */
-    portUart.processCommands(dataManager, opticalInterface);
+    portUart.processOutgoingData(dataManager);
 
   }
 };

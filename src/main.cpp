@@ -1,15 +1,17 @@
+// Toggle debug code: un-comment to enable
+#define DEBUG 1
+
 #include <Arduino.h>
-#include <esp32-hal-uart.c>
 #include <SdFat.h>
 #include "includes.h"
 #include "definitions.h"
 #include "peripherals.h"
+#include "dataManager.class.h"
 #include "uartInterface.class.h"
 #include "canInterface.class.h"
 #include "opticalInterface.class.h"
 #include "outboundController.class.h"
 #include "inboundController.class.h"
-#include "dataManager.class.h"
 
 TaskHandle_t outboundTaskHandler;
 TaskHandle_t inboundTaskHandler;
@@ -37,7 +39,8 @@ typedef uartInterface uartT;
 void outboundTask(void * parameter) {
   // Log the core number that task is initialized on
   Serial.println(PROGMEM "outbound task initialized on core " + (String) xPortGetCoreID());
-  ring(1, 2);
+  ring(1, 5);
+  delay(100);
   
   // Signalize beeKit that OCP is ready
   portUart.sendData((char*)"READY\n");
@@ -52,7 +55,7 @@ void outboundTask(void * parameter) {
 void inboundTask(void * parameter) {
   // Log the core number that task is initialized on
   Serial.println(PROGMEM "inbound task initialized on core " + (String) xPortGetCoreID());
-  ring(1, 2);
+  ring(1, 5);
 
   while(true) {
     inbound.run(portUart, dataManagerObject, opticalInterfaceObject);
@@ -87,7 +90,7 @@ void setup() {
   dataManagerObject.initialize(uSD);
 
   // Initialize optical interface
-  opticalInterfaceObject.initialize();
+  opticalInterfaceObject.initialize(dataManagerObject, portUart);
 
   // Initialize core tasks
   xTaskCreatePinnedToCore(outboundTask, "outbound_controller", OUTBOUND_STACK_DEPTH, NULL, configMAX_PRIORITIES - 1, &outboundTaskHandler, CORE0);

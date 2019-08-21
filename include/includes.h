@@ -1,4 +1,5 @@
-bool SPI_IN_USE = false;
+bool _spi_in_use = false;
+bool _data_manager_in_operation = false;
 
 void print_uint64_t(HardwareSerial HS, uint64_t num) {
   char rev[128]; 
