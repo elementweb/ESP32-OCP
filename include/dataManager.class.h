@@ -94,8 +94,6 @@ class dataManager {
       this->uSD.card()->readBlock(block, this->_block2);
       SPI_OP_END();
 
-      // this->_block2[buffer_length] = (uint8_t) 0x00;
-
       return this->_block2;
     }
 
@@ -126,13 +124,13 @@ class dataManager {
         this->uSD.card()->readBlock(pointer, this->_exchange);
         SPI_OP_END();
 
-        match = this->md5((char*) this->_exchange) == this->md5((char*) this->_block1);
+        match = this->md5((char*) this->_exchange).toString() == this->md5((char*) this->_block1).toString();
 
         #ifdef DEBUG
         Serial.print(PROGMEM "Push _block1: ");
-        Serial.println(this->md5((char*) this->_block1));
+        Serial.println(this->md5((char*) this->_block1).toString());
         Serial.print(PROGMEM "Push _exchange: ");
-        Serial.println(this->md5((char*) this->_exchange));
+        Serial.println(this->md5((char*) this->_exchange).toString());
         #endif
 
         if(!match) {
@@ -161,11 +159,11 @@ class dataManager {
     memcpy(dst, src, sizeof(src[0])*len);
   }
 
-  public: String md5(char * data) {
+  public: MD5Builder md5(char * data) {
     _md5.begin();
     _md5.add(data);
     _md5.calculate();
 
-    return _md5.toString();
+    return _md5;
   }
 };

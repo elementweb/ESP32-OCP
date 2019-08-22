@@ -14,7 +14,7 @@ class inboundController {
     /**
      * Listen for incoming data
      */
-    opticalInterface.processIncoming(dataManager);
+    opticalInterface.processIncoming(dataManager, portUart);
 
   }
 };
