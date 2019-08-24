@@ -2,48 +2,50 @@ using namespace std;
 
 #pragma once
 
-#define UART_PORT_BAUD        (115200)
-
-class dataManager;
+#define UART_PORT_BAUD        (460800)
+#define UART_PORT_DEPTH       (4096)
 
 class uartInterface {
-  public: bool data_available = true;
+  public: bool data_available = false;
   public: unsigned long last_data_available = 0;
 
   public: void initialize() {
-    size_t uart_depth = 8192;
+    size_t uart_depth = UART_PORT_DEPTH;
 
-    Serial2.begin(UART_PORT_BAUD);
-    Serial2.setRxBufferSize(uart_depth);
+    platformInterface.begin(UART_PORT_BAUD);
+    platformInterface.setRxBufferSize(uart_depth);
 
     delay(100);
   }
 
   public: void sendData(const char* s) {
-    Serial2.write(s);
+    platformInterface.write(s);
+  }
+
+  public: void flush() {
+    platformInterface.flush();
   }
 
   public: void processOutgoingData(dataManager &dataManager) {
-    bool data_available = false;
+    bool _data_available = false;
 
-    while(Serial2.available()) {
+    while(platformInterface.available()) {
       DATA_OP_BEGIN();
-      dataManager.outgoingBufferPush(Serial2.read());
+      dataManager.outgoingBufferPush(platformInterface.read());
       DATA_OP_END();
 
-      data_available = true;
-
-      delayMicroseconds(100);
+      _data_available = true;
+      // delayMicroseconds(10);
     }
 
-    if(data_available) {
-      ring(1, 1);
+    if(_data_available) {
+      // ring(1, 1);
 
-      this->data_available = true;
+      this->data_available = this->data_available ? true : _data_available;
       this->last_data_available = millis();
 
       #ifdef DEBUG
-      dataManager.reportOutgoingBufferStats();
+      // dataManager.reportOutgoingBufferStats();
       #endif
     }
   }

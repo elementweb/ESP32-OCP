@@ -26,8 +26,6 @@ opticalInterface opticalInterfaceObject;
 
 SdFat uSD;
 
-typedef uartInterface uartT;
-
 // Software version, title
 #define SOFTWARE_TITLE          PROGMEM "ESP32-OCP"
 #define SOFTWARE_VERSION        PROGMEM "v1.0.1dev"
@@ -43,7 +41,10 @@ void outboundTask(void * parameter) {
   delay(100);
   
   // Signalize beeKit that OCP is ready
-  portUart.sendData((char*)"READY\n");
+  // portUart.sendData((char*)"READY\n");
+  // delay(50);
+  portUart.flush();
+  delay(50);
 
   while(true) {
     outbound.run(portUart, dataManagerObject, opticalInterfaceObject);

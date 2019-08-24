@@ -8,11 +8,12 @@ using namespace std;
 #include <EEPROM.h>
 
 #define BUFFER_BLOCK_SIZE_BYTES   (512)
-#define BUFFER_OUTGOING_START     (8000000)
-#define BUFFER_MAX_SIZE_BLOCKS    (16000000)
+#define BUFFER_OUTGOING_START     (300)
+#define BUFFER_MAX_SIZE_BLOCKS    (8000000)
 
 MD5Builder _md5;
 const size_t buffer_length = BUFFER_BLOCK_SIZE_BYTES;
+const size_t buffer_length_excess = 768;
 
 // PIN definitions
 #define SDCS_PIN 14
@@ -21,14 +22,14 @@ class dataManager {
   private: SdFat uSD;
 
   // outgoing block buffer
-  private: uint8_t _block1[buffer_length];
-  public: uint8_t _block2[buffer_length];
+  private: uint8_t _block1[buffer_length_excess];
+  public: uint8_t _block2[buffer_length_excess];
 
   // buffer for SD card operations
-  private: uint8_t _exchange[buffer_length];
+  private: uint8_t _exchange[buffer_length_excess];
 
   // outgoing block pointers
-  public: uint32_t outgoingBlockStart = BUFFER_OUTGOING_START;
+  public: const uint32_t outgoingBlockStart = BUFFER_OUTGOING_START;
   public: uint32_t outgoingBlockPointer = BUFFER_OUTGOING_START;
   public: size_t outgoingBytePointer = 0;
 
@@ -56,16 +57,12 @@ class dataManager {
   }
 
   public: uint64_t outgoingBufferLength() {
-    return (this->outgoingBlockPointer - this->outgoingBlockStart) * BUFFER_BLOCK_SIZE_BYTES
+    return (this->outgoingBlockPointer - BUFFER_OUTGOING_START) * BUFFER_BLOCK_SIZE_BYTES
       + this->outgoingBytePointer;
   }
 
   public: uint16_t outgoingBufferBlockCount() {
-    return this->outgoingBlockPointer - this->outgoingBlockStart;
-  }
-
-  public: uint64_t outgoingBufferRemaining() {
-    return this->bufferSize() - this->outgoingBufferLength();
+    return (this->outgoingBlockPointer - BUFFER_OUTGOING_START);
   }
 
   public: void outgoingBufferFlush() {
@@ -87,7 +84,7 @@ class dataManager {
       SPI_OP_BEGIN();
 
       #ifdef DEBUG
-      Serial.print("Reading block: ");
+      Serial.print(PROGMEM "Reading block: ");
       Serial.println(block);
       #endif
 
@@ -104,10 +101,21 @@ class dataManager {
     return this->_block1;
   }
 
+  private: uint32_t returnOutgoingBlockPointer() {
+    this->outgoingBlockPointer++;
+    
+    if(this->outgoingBlockPointer > (this->outgoingBlockStart + BUFFER_MAX_SIZE_BLOCKS)) {
+      this->outgoingBlockPointer = this->outgoingBlockStart;
+    }
+
+    return this->outgoingBlockPointer;
+  }
+
   public: void outgoingBufferPush(char data) {
     uint32_t pointer;
     size_t buffer_len = 512;
     bool match = false;
+    bool last_matched = true;
     
     memset(this->_exchange, 0, buffer_len);
 
@@ -116,7 +124,7 @@ class dataManager {
     if(this->outgoingBytePointer >= buffer_len) {
       match = false;
 
-      pointer = this->outgoingBlockPointer++;
+      pointer = this->returnOutgoingBlockPointer();
 
       while(!match) {
         SPI_OP_BEGIN();
@@ -124,18 +132,22 @@ class dataManager {
         this->uSD.card()->readBlock(pointer, this->_exchange);
         SPI_OP_END();
 
+        this->_exchange[buffer_len] = (uint8_t) 0;
+
         match = this->md5((char*) this->_exchange).toString() == this->md5((char*) this->_block1).toString();
 
         #ifdef DEBUG
-        Serial.print(PROGMEM "Push _block1: ");
-        Serial.println(this->md5((char*) this->_block1).toString());
-        Serial.print(PROGMEM "Push _exchange: ");
-        Serial.println(this->md5((char*) this->_exchange).toString());
+        // Serial.print(PROGMEM "Push _block1: ");
+        // Serial.println(this->md5((char*) this->_block1).toString());
+        // Serial.print(PROGMEM "Push _exchange: ");
+        // Serial.println(this->md5((char*) this->_exchange).toString());
+        Serial.print(match ? (last_matched ? '+' : '*') : '!');
         #endif
 
+        last_matched = match;
+
         if(!match) {
-          Serial.println(PROGMEM "DATA MISMATCH.");
-          delayMicroseconds(100);
+          delay(100);
         }
       }
 
@@ -147,12 +159,11 @@ class dataManager {
 
   public: void reportOutgoingBufferStats() {
     Serial.println(PROGMEM "outgoingBytePointer: " + (String) this->outgoingBytePointer);
+    Serial.println(PROGMEM "outgoingBlockPointer: " + (String) this->outgoingBlockPointer);
 
-    Serial.print("buffer length: ");
+    Serial.print(PROGMEM "buffer length: ");
     print_uint64_t(Serial, this->outgoingBufferLength());
     Serial.println();
-    
-    Serial.println(PROGMEM "outgoingBufferBlockCount: " + (String) this->outgoingBufferBlockCount());
   }
 
   public: void copy(uint8_t* src, uint8_t* dst, int len) {

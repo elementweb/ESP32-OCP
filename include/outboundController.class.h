@@ -11,5 +11,10 @@ class outboundController {
      */
     portUart.processOutgoingData(dataManager);
 
+    /**
+     * Optical interface housekeeping activities
+     */
+    opticalInterface.outboundHousekeepingRunner();
+
   }
 };

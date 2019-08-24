@@ -17,3 +17,7 @@
 
 #define DATA_OP_BEGIN();    while(_data_manager_in_operation){delayMicroseconds(100);}_data_manager_in_operation=true;
 #define DATA_OP_END();      _data_manager_in_operation=false;
+#define WAIT_DATA_OP_END(); while(_data_manager_in_operation);
+
+HardwareSerial opticalLink(1);
+HardwareSerial platformInterface(2);

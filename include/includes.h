@@ -15,6 +15,7 @@ void print_uint64_t(HardwareSerial HS, uint64_t num) {
 
   while (p > rev) {
     HS.print(*p--);
+
     not_null = true;
   }
   
