@@ -74,7 +74,7 @@ class dataManager {
   public: void frontBufferFlush() {
     this->outgoingBytePointer = 0;
 
-    memset(this->_block1, 0, (size_t) 512);
+    memset(this->_block1, 0, (size_t) BUFFER_BLOCK_SIZE_BYTES);
   }
 
   public: uint8_t * returnOutgoingBlock(uint32_t block) {
@@ -113,7 +113,7 @@ class dataManager {
 
   public: void outgoingBufferPush(char data) {
     uint32_t pointer;
-    size_t buffer_len = 512;
+    size_t buffer_len = BUFFER_BLOCK_SIZE_BYTES;
     bool match = false;
     bool last_matched = true;
     
