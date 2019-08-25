@@ -41,6 +41,18 @@ void ring(int times = 1, int intensity = 5, int delay_ms = 50) {
   }
 }
 
+void ringMicroseconds(int times = 1, int intensity = 50, int delay_us = 10) {
+  // intensity: 5 = LOW; 50 = HIGH
+
+  for(int r=0; r<times; r++) {
+    delayMicroseconds(delay_us);
+    digitalWrite(BUZZER, HIGH);
+
+    delayMicroseconds(intensity);
+    digitalWrite(BUZZER, LOW);
+  }
+}
+
 void state(bool condition = true) {
   digitalWrite(PIN_STATE, condition ? HIGH : LOW);
 }

@@ -1,5 +1,5 @@
 // Toggle debug code: un-comment to enable
-#define DEBUG 1
+// #define DEBUG 1
 
 #include <Arduino.h>
 #include <SdFat.h>

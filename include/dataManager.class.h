@@ -80,7 +80,7 @@ class dataManager {
   public: uint8_t * returnOutgoingBlock(uint32_t block) {
     uint32_t uSD_block_count = this->outgoingBufferBlockCount();
 
-    if(block < (this->outgoingBlockStart + uSD_block_count)) {
+    if(block <= (this->outgoingBlockStart + uSD_block_count)) {
       SPI_OP_BEGIN();
 
       #ifdef DEBUG
