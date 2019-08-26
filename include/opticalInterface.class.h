@@ -757,6 +757,8 @@ class opticalInterface {
     // }
 
     // return (millis() - this->last_remote_unit_response) < RESPONSE_TIMEOUT_MS;
+
+    return true;
   }
   
 };
