@@ -4,4 +4,5 @@ using namespace std;
 
 class canInterface {
   // not implemented yet.
+  
 };

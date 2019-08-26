@@ -14,7 +14,7 @@ class outboundController {
     /**
      * Optical interface housekeeping activities
      */
-    opticalInterface.outboundHousekeepingRunner();
-
+    opticalInterface.emitIncomingData();
   }
+
 };

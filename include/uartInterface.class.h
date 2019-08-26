@@ -23,7 +23,9 @@ class uartInterface {
   }
 
   public: void flush() {
-    platformInterface.flush();
+    while(platformInterface.available() > 0) {
+      platformInterface.read();
+    }
   }
 
   public: void processOutgoingData(dataManager &dataManager) {
@@ -35,12 +37,9 @@ class uartInterface {
       DATA_OP_END();
 
       _data_available = true;
-      // delayMicroseconds(10);
     }
 
     if(_data_available) {
-      // ring(1, 1);
-
       this->data_available = this->data_available ? true : _data_available;
       this->last_data_available = millis();
 

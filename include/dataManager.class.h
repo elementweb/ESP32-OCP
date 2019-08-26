@@ -12,6 +12,7 @@ using namespace std;
 #define BUFFER_MAX_SIZE_BLOCKS    (8000000)
 
 MD5Builder _md5;
+
 const size_t buffer_length = BUFFER_BLOCK_SIZE_BYTES;
 const size_t buffer_length_excess = 768;
 
@@ -114,8 +115,12 @@ class dataManager {
   public: void outgoingBufferPush(char data) {
     uint32_t pointer;
     size_t buffer_len = BUFFER_BLOCK_SIZE_BYTES;
+
     bool match = false;
+
+    #ifdef DEBUG
     bool last_matched = true;
+    #endif
     
     memset(this->_exchange, 0, buffer_len);
 
@@ -142,9 +147,8 @@ class dataManager {
         // Serial.print(PROGMEM "Push _exchange: ");
         // Serial.println(this->md5((char*) this->_exchange).toString());
         Serial.print(match ? (last_matched ? '+' : '*') : '!');
-        #endif
-
         last_matched = match;
+        #endif
 
         if(!match) {
           delay(100);
@@ -177,4 +181,19 @@ class dataManager {
 
     return _md5;
   }
+
+  public: String midString(String str, String start, String finish){
+    int locStart = str.indexOf(start);
+
+    if (locStart==-1) return "";
+
+    locStart += start.length();
+
+    int locFinish = str.indexOf(finish, locStart);
+
+    if (locFinish==-1) return "";
+
+    return str.substring(locStart, locFinish);
+  }
+
 };

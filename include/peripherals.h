@@ -5,6 +5,9 @@
 #define BUZZER 21
 #define PIN_STATE 15
 
+bool condition_red = false;
+bool condition_blue = false;
+
 void initializePeripherals() {
   // LEDs
   pinMode(LED_RED, OUTPUT);
@@ -22,11 +25,23 @@ void initializePeripherals() {
 }
 
 void red(bool condition = true) {
+  condition_red = condition;
+
   digitalWrite(LED_RED, condition ? HIGH : LOW);
 }
 
 void blue(bool condition = true) {
+  condition_blue = condition;
+
   digitalWrite(LED_BLUE, condition ? HIGH : LOW);
+}
+
+void redToggle() {
+  red(!condition_red);
+}
+
+void blueToggle() {
+  blue(!condition_blue);
 }
 
 void ring(int times = 1, int intensity = 5, int delay_ms = 50) {
@@ -42,8 +57,6 @@ void ring(int times = 1, int intensity = 5, int delay_ms = 50) {
 }
 
 void ringMicroseconds(int times = 1, int intensity = 50, int delay_us = 10) {
-  // intensity: 5 = LOW; 50 = HIGH
-
   for(int r=0; r<times; r++) {
     delayMicroseconds(delay_us);
     digitalWrite(BUZZER, HIGH);

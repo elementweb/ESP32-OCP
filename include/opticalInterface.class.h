@@ -9,7 +9,7 @@ using namespace std;
 #define LOAD_PIN                    (25)
 
 // Define optical interface clock frequency in Hz. Baud rate = frequency*2
-#define FREQUENCY                   (150000)
+#define FREQUENCY                   (100000)
 #define INCOMING_BUFFER_DEPTH       (16384)
 
 // Signal pulse bounds
@@ -51,10 +51,11 @@ long pulse1, pulse2;
 
 class opticalInterface {
   private: char flag_packet_header[7] PROGMEM         = "[flag]";
-  private: char data_packet_header[14] PROGMEM        = "[data-header]";
-  private: char checksum_packet_header[18] PROGMEM    = "[checksum-header]";
+  private: char data_packet_header[7] PROGMEM         = "[data]";
+  private: char checksum_packet_header[11] PROGMEM    = "[checksum]";
   private: char length_packet_header[9] PROGMEM       = "[length]";
   private: char packet_footer[9] PROGMEM              = "[footer]";
+  private: char packet_reset[6] PROGMEM               = "[rst]";
 
   private: uint8_t operational_mode = OP_MODE_IDLE;
   private: uint8_t transmission_mode = MODE_IDLE;
@@ -84,6 +85,12 @@ class opticalInterface {
   private: bool incoming_packet_detected = false;
   private: bool expecting_incoming_packet = false;
 
+  private: bool data_ready = false;
+  private: String incomingData;
+
+  private: bool notified = true;
+  private: bool _reset = false;
+
   public: void initialize(dataManager &dataManager, uartInterface &portUart) {
     // Optical interface pins
     pinMode(DATA_PIN, INPUT);
@@ -103,12 +110,6 @@ class opticalInterface {
 
     // Allow cooldown time before continuing
     delay(100);
-
-    // platformInterface.write(PRE_PACKET);
-    // platformInterface.write((char) PRE_PACKET);
-    // platformInterface.write((int) PRE_PACKET);
-
-    // this->incomingPacketFlag((uint8_t) 0);
   }
 
   private: bool dataAvailableForTransmission(dataManager &dataManager) {
@@ -120,9 +121,6 @@ class opticalInterface {
     return dataManager.outgoingBlockPointer != this->outgoingBlockPointer;
   }
 
-  /**
-   * Process outgoing data
-   */ 
   public: void processOutgoing(dataManager &dataManager, uartInterface &portUart) {
     bool packet_verification_detected;
 
@@ -132,17 +130,19 @@ class opticalInterface {
 
     if(this->operational_mode == OP_MODE_IDLE || this->operational_mode == OP_MODE_PENDING) {
       if(portUart.data_available && ((millis() - portUart.last_data_available) > TRANS_DELAY_MS)) {
-        // Serial.println(PROGMEM "()");
-        
         if(this->dataAvailableForTransmission(dataManager)) {
-          this->activateTransmission(dataManager);
+          this->activateTransmission(dataManager, portUart);
+        } else {
+          this->operational_mode = OP_MODE_IDLE;
+          this->transmission_mode = MODE_IDLE;
         }
+      } else {
+        this->operational_mode = OP_MODE_IDLE;
+        this->transmission_mode = MODE_IDLE;
       }
     }
     
-    if(!this->isTransmissionActive()) {
-      this->operational_mode = OP_MODE_IDLE;
-
+    if(this->operational_mode != OP_MODE_TRANSMITTING) {
       return;
     }
 
@@ -176,11 +176,15 @@ class opticalInterface {
           packet_verification_detected = this->expectPacketVerification();
         }
 
-
-
         #ifdef DEBUG
         Serial.println(PROGMEM " -- received verification");
         #endif
+
+        if(this->_reset) {
+          this->reset();
+          
+          return;
+        }
 
         this->operational_mode = OP_MODE_PENDING;
         this->transmission_mode = MODE_IDLE;
@@ -194,14 +198,13 @@ class opticalInterface {
     }
   }
 
-  /**
-   * Process incoming data
-   */ 
   public: void processIncoming(dataManager &dataManager, uartInterface &portUart) {
     char read;
+
     bool packet_complete = false;
     bool packet_detected = false;
     bool pre_packet_detected = false;
+
     size_t buffer_pointer = 0;
     
     if(this->operational_mode == OP_MODE_TRANSMITTING || this->operational_mode == OP_MODE_PENDING) {
@@ -210,7 +213,9 @@ class opticalInterface {
 
     if(this->operational_mode == OP_MODE_IDLE) {
       if(this->searchBeacon()) {
+        #ifdef DEBUG
         Serial.println(PROGMEM "R: Incoming beacon detected");
+        #endif
 
         while(!packet_detected) {
           this->emitBeacon(21000);
@@ -218,10 +223,15 @@ class opticalInterface {
           packet_detected = this->detectIncomingPacket();
         }
 
+        #ifdef DEBUG
         Serial.println(PROGMEM "R: Detected incoming packet");
+        #endif
 
         this->operational_mode = OP_MODE_RECEIVING;
+
+        #ifdef DEBUG
         Serial.println(PROGMEM "R: Reception mode activated");
+        #endif
       }
     }
 
@@ -247,7 +257,6 @@ class opticalInterface {
       while(!packet_complete) {
         if(opticalLink.available()) {
           read = opticalLink.read();
-          // Serial.print(read);
 
           if(read == PRE_PACKET) {
             pre_packet_detected = true;
@@ -267,134 +276,80 @@ class opticalInterface {
       Serial.println(PROGMEM "R: Packet reception complete");
       #endif
       
-      if(this->parsePacketAndValidateIntegrity(dataManager)) {
-        ringMicroseconds(1);
+      this->parsePacketAndValidateIntegrity(dataManager);
+
+      if(this->_reset) {
+        this->streamPacketVerification(100);
+        this->reset();
+
+        return;
       }
 
       if(this->_incomingPacketFlag > 0) {
-        // Serial.println(PROGMEM "R: Streaming packet verification");
-        // Serial.print("expecting: ");
-        // Serial.println(this->_expectingIncomingPacketFlag);
-
-        // long begin = millis();
-
-        // while((millis() - begin) < 20) {
-          this->streamPacketVerification(5);
-        // }
+        this->streamPacketVerification(5);
       }
-      
-
-
-
-      //
-
-      // Serial.println(PROGMEM "R: Waiting for incoming packet");
-
-      // memset(this->packet_buffer, 0, this->packet_buffer_size);
-      // buffer_pointer = 0;
-
-      // opticalLink.flush();
-      // while(!this->detectIncomingPacket());
-      // while((read = opticalLink.read()) == PRE_PACKET);
-      // Serial.print(read);
-
-      // this->packet_buffer[buffer_pointer++] = opticalLink.read();
-
-      // while(!packet_complete) {
-      //   if(opticalLink.available()) {
-      //     this->packet_buffer[buffer_pointer++] = opticalLink.read();
-
-      //     if(strstr((char*) this->packet_buffer, this->packet_footer)) {
-      //       packet_complete = true;
-      //     }
-      //   }
-      // }
-
-      // this->_expectingIncomingPacketFlag = 1;
-
-      // platformInterface.write((char*) this->packet_buffer);
-
-      // decode packet here
-      // obtain packet flag and pass into verification
-
-      // this->streamPacketVerification();
-
-      // Serial.println(PROGMEM "R: Packet received");
     }
   }
 
+  private: void reset() {
+    this->operational_mode = OP_MODE_IDLE;
+    this->transmission_mode = MODE_IDLE;
+    this->_reset = false;
 
+    this->_outgoingPacketFlag = 0;
+    this->_incomingPacketFlag = 0;
+    this->_expectingIncomingPacketFlag = 1;
 
+    #ifdef DEBUG
+    Serial.println("reseting...");
+    #endif
 
+    red(true);
+    ring(3, 2);
+    red(false);
+    delay(1000);
+    blue(false);
+  }
 
   private: void streamPacketVerification(uint times) {
     for(int e=0; e<=times; e++) {
       opticalLink.write(RESPONSE_VERIFICATION);
-      // Serial.write(RESPONSE_VERIFICATION);
       delayMicroseconds(50);
 
-      // this->_expectingIncomingPacketFlag = 2;
-      // String flag = String(this->_expectingIncomingPacketFlag);
-
-      // opticalLink.write(0x3B);
       opticalLink.write(this->_incomingPacketFlag);
-      // delay(10);
-      // opticalLink.print(this->_expectingIncomingPacketFlag);
-      // delay(10);
-      // opticalLink.print(this->_expectingIncomingPacketFlag, HEX);
-      // Serial.print(this->_expectingIncomingPacketFlag);
       delayMicroseconds(50);
     }
 
     delayMicroseconds(50);
   }
 
-
   private: bool expectPacketVerification() {
     char read, prev = 0x00;
 
     bool verification_detected = false;
-    bool wrapper_detected = false;
 
     long start = millis();
-
-    // this->flush();
     
     while((millis() - start) < 5) {
       if(opticalLink.available()) {
         read = opticalLink.read();
 
-        // Serial.print("expecting: ");
-        // Serial.println(this->_outgoingPacketFlag, HEX);
-        // Serial.print(read, HEX);
-
         if(read == (char) this->_outgoingPacketFlag) {
           if(prev == (char) RESPONSE_VERIFICATION) {
-            // Serial.print("matches!");
             verification_detected = true;
           }
         }
-
-        // if(wrapper_detected && read == (char) this->_outgoingPacketFlag) {
-        //   Serial.write((char) read);
-        //   verification_detected = true;
-
-        //   break;
-        // }
-
-        // wrapper_detected = read == RESPONSE_VERIFICATION;
 
         prev = read;
       }
     }
 
     if(verification_detected) {
-      ringMicroseconds(1);
+      this->notified = false;
     }
 
     return verification_detected;
   }
-
 
   private: bool parsePacketAndValidateIntegrity(dataManager &dataManager) {
     char data_buffer[513];
@@ -406,77 +361,39 @@ class opticalInterface {
     }
 
     String packet = (char*) this->packet_buffer;
-
-    // platformInterface.println(length.toInt());
-    // platformInterface.println(data.length());
-    // Serial.println(packet);
-
-    String flag = this->midString(packet, this->flag_packet_header, this->checksum_packet_header);
+    String flag = dataManager.midString(packet, this->flag_packet_header, this->checksum_packet_header);
     
-    // platformInterface.print("incoming packet flag: ");
-    // platformInterface.println(flag);
-    // platformInterface.print("expecting: ");
-    // platformInterface.println(this->_expectingIncomingPacketFlag);
-
     if(flag.toInt() != this->_expectingIncomingPacketFlag) {
       return false;
     }
 
-    String data = this->midString(packet, this->data_packet_header, this->packet_footer);
-    String length = this->midString(packet, this->length_packet_header, this->data_packet_header);
+    this->_incomingPacketFlag = (uint8_t) flag.toInt();
+    this->expectIncomingPacketFlag(this->_incomingPacketFlag);
 
-    if(length.toInt() != data.length()) {
+    this->incomingData = dataManager.midString(packet, this->data_packet_header, this->packet_reset);
+
+    String length = dataManager.midString(packet, this->length_packet_header, this->data_packet_header);
+
+    if(length.toInt() != this->incomingData.length()) {
       return false;
     }
 
-    String checksum = this->midString(packet, this->checksum_packet_header, this->length_packet_header);
-    data.toCharArray(data_buffer, 513);
-    String md5 = dataManager.md5((char*) data_buffer).toString();
+    String checksum = dataManager.midString(packet, this->checksum_packet_header, this->length_packet_header);
+    this->incomingData.toCharArray(data_buffer, 513);
 
-    // platformInterface.println(checksum);
-    // platformInterface.println(md5);
+    String md5 = dataManager.md5((char*) data_buffer).toString();
 
     if(checksum != md5) {
       return false;
     }
 
-    if((uint8_t) flag.toInt() == this->_expectingIncomingPacketFlag) {
-      this->_incomingPacketFlag = (uint8_t) flag.toInt();
-      this->expectIncomingPacketFlag(this->_incomingPacketFlag);
-    }
+    this->_reset = dataManager.midString(packet, this->packet_reset, this->packet_footer) == "1";
 
-    platformInterface.print(data);
+    while(this->data_ready);
+    this->data_ready = true;
 
     return true;
   }
-
-
-
-
-
-
-
-
-  private: String midString(String str, String start, String finish){
-    int locStart = str.indexOf(start);
-
-    if (locStart==-1) return "";
-
-    locStart += start.length();
-
-    int locFinish = str.indexOf(finish, locStart);
-
-    if (locFinish==-1) return "";
-
-    return str.substring(locStart, locFinish);
-  }
-
-
-
-
-
-
-
 
   private: bool detectIncomingPacket() {
     char read;
@@ -493,7 +410,7 @@ class opticalInterface {
         pre_packet_count = read == PRE_PACKET ? (pre_packet_count + 1) : 0;
       }
 
-      if(pre_packet_count >= 8) {
+      if(pre_packet_count >= 4) {
         this->flush();
 
         return true;
@@ -559,13 +476,15 @@ class opticalInterface {
     int long_pulse = 1;
 
     int pulse_count = 0;
-    long start, end;
     int e, i;
     bool pulse;
 
     int load_increments = FREQUENCY >= 250000 ? map(FREQUENCY, 250000, 400000, 4, 1) : 5;
 
+    #ifdef DEBUG
+    long start, end;
     start = millis();
+    #endif
 
     for(e=0; e<=255; e+=load_increments) { // for frequencies >250kHz load increments should be as low as 1
       pulse_count = 0;
@@ -594,8 +513,8 @@ class opticalInterface {
       setLoad(long_load);
       setGain(long_gain);
 
+      #ifdef DEBUG
       end = millis() - start;
-
       Serial.print(PROGMEM "R: AGC has resolved optimum load (");
       Serial.print(long_load);
       Serial.print(PROGMEM ") and gain (");
@@ -603,6 +522,7 @@ class opticalInterface {
       Serial.print(PROGMEM ") in ");
       Serial.print(end);
       Serial.println(PROGMEM "ms");
+      #endif
 
       ring(1, 1);
     }
@@ -632,31 +552,29 @@ class opticalInterface {
     return signal;
   }
 
-  private: void remoteUnitResponds(bool condition = true) {
-    this->remote_unit_responding = condition;
-    this->last_remote_unit_response = condition ? millis() : 0;
-  }
+  private: bool perhapsWeShouldReset(dataManager &dataManager, uartInterface &portUart) {
+    if(!this->dataAvailableForTransmission(dataManager)) {
+      portUart.data_available = false;
+      this->_reset = true;
+      
+      #ifdef DEBUG
+      Serial.println(PROGMEM "T: We should reset");
+      #endif
 
-  private: bool remoteUnitResponding() {
-    if(!this->remote_unit_responding) {
-      return false;
+      return true;
     }
 
-    if(this->last_remote_unit_response > millis()) {
-      return false;
-    }
-
-    return (millis() - this->last_remote_unit_response) < RESPONSE_TIMEOUT_MS;
+    return false;
   }
 
-  private: bool activateTransmission(dataManager &dataManager) {
+  private: bool activateTransmission(dataManager &dataManager, uartInterface &portUart) {
     if(this->buildDataPacket(dataManager)) {
       #ifdef DEBUG
       Serial.print(PROGMEM "data_buffer: ");
       Serial.println((char*) this->data_buffer);
       #endif
 
-      if(this->buildPacket(dataManager)) {
+      if(this->buildPacket(dataManager, this->perhapsWeShouldReset(dataManager, portUart))) {
         #ifdef DEBUG
         Serial.print(PROGMEM "packet_buffer: ");
         Serial.println((char*) this->packet_buffer);
@@ -724,7 +642,7 @@ class opticalInterface {
     return false;
   }
 
-  private: bool buildPacket(dataManager &dataManager) {
+  private: bool buildPacket(dataManager &dataManager, bool reset = false) {
     char checksum[32], flag_buf[4], length_buf[4];
 
     memset(this->packet_buffer, 0, this->packet_buffer_size);
@@ -740,14 +658,17 @@ class opticalInterface {
     dataManager.copy((uint8_t*) this->flag_packet_header, this->packet_buffer, 6);
     dataManager.copy((uint8_t*) flag_buf, this->packet_buffer + strlen((char*) this->packet_buffer), strlen((char*) flag_buf));
 
-    dataManager.copy((uint8_t*) this->checksum_packet_header, this->packet_buffer + strlen((char*) this->packet_buffer), 17);
+    dataManager.copy((uint8_t*) this->checksum_packet_header, this->packet_buffer + strlen((char*) this->packet_buffer), 10);
     dataManager.copy((uint8_t*) checksum, this->packet_buffer + strlen((char*) this->packet_buffer), 32);
 
     dataManager.copy((uint8_t*) this->length_packet_header, this->packet_buffer + strlen((char*) this->packet_buffer), 8);
     dataManager.copy((uint8_t*) length_buf, this->packet_buffer + strlen((char*) this->packet_buffer), strlen((char*) length_buf));
 
-    dataManager.copy((uint8_t*) this->data_packet_header, this->packet_buffer + strlen((char*) this->packet_buffer), 13);
+    dataManager.copy((uint8_t*) this->data_packet_header, this->packet_buffer + strlen((char*) this->packet_buffer), 6);
     dataManager.copy(this->data_buffer, this->packet_buffer + strlen((char*) this->packet_buffer), strlen((char*) this->data_buffer));
+
+    dataManager.copy((uint8_t*) this->packet_reset, this->packet_buffer + strlen((char*) this->packet_buffer), 5);
+    dataManager.copy((uint8_t*) (reset ? "1" : "0"), this->packet_buffer + strlen((char*) this->packet_buffer), 1);
 
     dataManager.copy((uint8_t*) this->packet_footer, this->packet_buffer + strlen((char*) this->packet_buffer), 8);
 
@@ -786,11 +707,6 @@ class opticalInterface {
     delayMicroseconds(100);
     
     opticalLink.write((char*) this->packet_buffer);
-    // Serial.println();
-    // Serial.println();
-    // Serial.write((char*) this->packet_buffer);
-    // Serial.println();
-    // Serial.println();
 
     start = millis();
 
@@ -801,29 +717,46 @@ class opticalInterface {
     }
   }
 
-  public: bool isTransmissionActive() {
-    return this->operational_mode == OP_MODE_TRANSMITTING;
-  }
+  public: void emitIncomingData() {
+    if(this->data_ready) {
+      platformInterface.print(this->incomingData);
 
-  public: void outboundHousekeepingRunner() {
-    // if(this->operational_mode == OP_MODE_TRANSMITTING && !this->transmission_response_beacon) {
-    //   this->transmission_response_beacon = this->searchBeacon();
-    // }
+      this->data_ready = false;
 
-    // if(this->operational_mode == OP_MODE_TRANSMITTING && !this->received_packet_verification) {
-    //   this->received_packet_verification = this->expectPacketVerification();
-    // }
+      redToggle();
+      ringMicroseconds(1, 50);
+    }
 
-    // if(this->expecting_incoming_packet && !this->incoming_packet_detected) {
-    //   this->incoming_packet_detected = this->detectIncomingPacket();
-    // }
+    if(!this->notified) {
+      redToggle();
+      ringMicroseconds(1, 50);
 
-    // delayMicroseconds(100);
+      this->notified = true;
+    }
   }
 
   private: void flush() {
     while(opticalLink.available() > 0) {
       opticalLink.read();
     }
-  }   
+  }
+
+  private: void remoteUnitResponds(bool condition = true) {
+    // this->remote_unit_responding = condition;
+    
+    // this->last_remote_unit_response = condition ? millis() : 0;
+  }
+
+  private: bool remoteUnitResponding() {
+    // if(!this->remote_unit_responding) {
+    //   return false;
+    // }
+
+    // if(this->last_remote_unit_response > millis()) {
+    //   return false;
+    // }
+
+    // return (millis() - this->last_remote_unit_response) < RESPONSE_TIMEOUT_MS;
+  }
+  
 };
